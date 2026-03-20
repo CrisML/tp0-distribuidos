@@ -1,9 +1,9 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 ACTION="action: test_echo_server"
-SUCCESS="${ACTION} | result: success"
-FAIL="${ACTION} | result: fail"
+SUCCESS="$ACTION | result: success"
+FAIL="$ACTION | result: fail"
 
 SERVER_CONTAINER="${SERVER_CONTAINER:-server}"
 SERVER_HOST="${SERVER_HOST:-server}"
@@ -14,30 +14,28 @@ if ! docker ps --format '{{.Names}}' | grep -qx "$SERVER_CONTAINER"; then
   exit 1
 fi
 
-NETWORK="$(
-  docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}' "$SERVER_CONTAINER" \
-    | head -n 1 || true
-)"
-
-if [[ -z "$NETWORK" ]]; then
+NETWORK="$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}' "$SERVER_CONTAINER" 2>/dev/null | head -n 1 || true)"
+if [ -z "$NETWORK" ]; then
   echo "$FAIL"
   exit 1
 fi
 
-MSG="tp0-echo-test-$(date +%s%N)"
+MSG="tp0-echo-test-$(date +%s)"
 
 REPLY="$(
-  docker run --rm --network "$NETWORK" alpine:3.19 sh -lc "
-    set -e
-    apk add --no-cache netcat-openbsd >/dev/null
-    printf '%s\n' '$MSG' | nc -w 2 $SERVER_HOST $SERVER_PORT | head -n 1
-  " 2>/dev/null || true
+  docker run --rm --network "$NETWORK" \
+    -e MSG="$MSG" \
+    alpine:3.19 sh -lc '
+      set -e
+      apk add --no-cache netcat-openbsd >/dev/null
+      printf "%s\n" "$MSG" | nc -w 2 '"$SERVER_HOST"' '"$SERVER_PORT"' | head -n 1
+    ' 2>/dev/null || true
 )"
 
-if [[ "$REPLY" == "$MSG" ]]; then
+if [ "$REPLY" = "$MSG" ]; then
   echo "$SUCCESS"
   exit 0
-else
-  echo "$FAIL"
-  exit 1
 fi
+
+echo "$FAIL"
+exit 1
