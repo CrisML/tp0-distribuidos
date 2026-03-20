@@ -9,8 +9,8 @@ fi
 OUT="$1"
 N="$2"
 
-if ! [[ "$N" =~ ^[0-9]+$ ]] || [[ "$N" -lt 1 ]]; then
-  echo "Error: <cantidad_clientes> debe ser un entero >= 1. Recibido: $N" >&2
+if ! [[ "$N" =~ ^[0-9]+$ ]] || [[ "$N" -lt 0 ]]; then
+  echo "Error: <cantidad_clientes> debe ser un entero >= 0. Recibido: $N" >&2
   exit 1
 fi
 
@@ -30,8 +30,9 @@ services:
 
 YAML
 
-for i in $(seq 1 "$N"); do
-  cat >> "$OUT" <<YAML
+if [[ "$N" -gt 0 ]]; then
+  for i in $(seq 1 "$N"); do
+    cat >> "$OUT" <<YAML
   client${i}:
     container_name: client${i}
     image: client:latest
@@ -46,7 +47,8 @@ for i in $(seq 1 "$N"); do
       - server
 
 YAML
-done
+  done
+fi
 
 cat >> "$OUT" <<'YAML'
 networks:
