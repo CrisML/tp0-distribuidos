@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal" 
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/op/go-logging"
@@ -110,6 +113,15 @@ func main() {
 		LoopPeriod:    v.GetDuration("loop.period"),
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
+    defer stop()
+
+    go func() {
+        <-ctx.Done()
+        // Log de SIGTERM
+        log.Infof("action: signal_received | result: success | signal: SIGTERM | component: client | client_id: %v", clientConfig.ID)
+    }()
+
 	client := common.NewClient(clientConfig)
-	client.StartClientLoop()
+	client.StartClientLoop(ctx)
 }
