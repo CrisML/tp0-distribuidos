@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 from configparser import ConfigParser
-from common.server import Server
 import logging
 import os
+import signal
+
+from common.server import Server
 
 
 def initialize_config():
@@ -45,12 +47,21 @@ def main():
 
     # Log config parameters at the beginning of the program to verify the configuration
     # of the component
-    logging.debug(f"action: config | result: success | port: {port} | "
-                  f"listen_backlog: {listen_backlog} | logging_level: {logging_level}")
+    logging.debug(
+        f"action: config | result: success | port: {port} | "
+        f"listen_backlog: {listen_backlog} | logging_level: {logging_level}"
+    )
 
-    # Initialize server and start server loop
     server = Server(port, listen_backlog)
+    
+    def graceful_shutdown(signum=None, frame=None):
+        logging.info("action: signal_received | result: success | signal: SIGTERM | component: server")
+        server.stop()
+
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+
     server.run()
+
 
 def initialize_log(logging_level):
     """
