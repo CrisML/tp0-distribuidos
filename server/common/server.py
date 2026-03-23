@@ -70,11 +70,18 @@ class Server:
 
     def __handle_client_connection(self, client_sock):
         cantidad = 0
+        action = "unknown"
         try:
             payload = recv_frame(client_sock)
-            msg_type = payload[0] if len(payload) > 0 else None
+            if len(payload) < 1:
+                raise ValueError("empty payload")
+
+            msg_type = payload[0]
 
             if msg_type == MSG_FIN:
+                action = "fin"
+                if len(payload) < 2:
+                    raise ValueError("FIN payload too short")
                 agency = int(payload[1])
                 with self._cv:
                     self._seen.add(agency)
@@ -84,6 +91,9 @@ class Server:
                 return
 
             if msg_type == MSG_GET_WINNERS:
+                action = "get_winners"
+                if len(payload) < 2:
+                    raise ValueError("GET_WINNERS payload too short")
                 agency = int(payload[1])
 
                 with self._cv:
@@ -110,6 +120,7 @@ class Server:
                 send_frame(client_sock, encode_winners(winners))
                 return
 
+            action = "apuesta_recibida"
             msg = decode_message(payload)
             bets_in = msg["bets"]
             cantidad = len(bets_in)
@@ -135,8 +146,11 @@ class Server:
             logging.info(f"action: apuesta_recibida | result: success | cantidad: {cantidad}")
             send_frame(client_sock, encode_ack(True))
 
-        except Exception:
-            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {cantidad}")
+        except Exception as e:
+            if action == "apuesta_recibida":
+                logging.error(f"action: apuesta_recibida | result: fail | cantidad: {cantidad}")
+            else:
+                logging.error(f"action: {action} | result: fail | error: {e}")
             try:
                 send_frame(client_sock, encode_ack(False))
             except Exception:
