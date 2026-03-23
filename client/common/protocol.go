@@ -92,9 +92,6 @@ func encodeBatch(bets []Bet) ([]byte, error) {
     binary.BigEndian.PutUint16(cnt[:], uint16(len(bets)))
     out = append(out, cnt[:]...)
 
-    out = out[:0]
-    out = append(out, msgTypeBatch)
-    out = append(out, cnt[:]...)
     for _, b := range bets {
         bin, err := encodeBetBody(b)
         if err != nil {

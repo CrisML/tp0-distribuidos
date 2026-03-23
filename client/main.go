@@ -226,22 +226,24 @@ func main() {
 		maxAmount = 32
 	}
 
+	log.Infof("action: config | result: success | client_id: %s | dataset: %s | batch_max_amount: %d | server_address: %s",
+		v.GetString("id"), datasetPath, maxAmount, v.GetString("server.address"),
+	)
+
 	clientCfg := common.ClientConfig{
 		ServerAddress: v.GetString("server.address"),
 		ID:            v.GetString("id"),
 	}
-	c := common.NewClient(clientCfg)
+	_ = common.NewClient(clientCfg)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer stop()
-
 
 	bets, err := readBetsFromCSV(datasetPath, agency)
 	if err != nil {
 		log.Criticalf("failed to read dataset: %v", err)
 	}
 
-	// Enviar en batches
 	for _, batch := range chunkBets(bets, maxAmount) {
 		select {
 		case <-ctx.Done():
@@ -262,6 +264,6 @@ func main() {
 		}
 	}
 
-	<-ctx.Done()
-	log.Infof("action: shutdown | result: success | component: client | client_id: %v", clientCfg.ID)
+
+	log.Infof("action: loop_finished | result: success | client_id: %v", clientCfg.ID)
 }
