@@ -25,6 +25,7 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       - ./server/config.ini:/config.ini
+      - ./server/bets.csv:/bets.csv
     networks:
       - testing_net
 
