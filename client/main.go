@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -111,14 +114,94 @@ func mustEnv(key string) string {
 	return v
 }
 
-func mustUint32Env(key string) uint32 {
-	raw := mustEnv(key)
-	n, err := strconv.Atoi(raw)
+func parseUint32(raw string) (uint32, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil || n < 0 {
-		_, _ = fmt.Fprintf(os.Stderr, "invalid %s: %q\n", key, raw)
-		os.Exit(1)
+		return 0, fmt.Errorf("invalid uint32: %q", raw)
 	}
-	return uint32(n)
+	return uint32(n), nil
+}
+
+func readBetsFromCSV(path string, agency uint8) ([]common.Bet, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	r.Comma = ','
+	r.FieldsPerRecord = -1
+
+	var bets []common.Bet
+	for {
+		rec, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		if len(rec) == 0 {
+			continue
+		}
+
+		for i := range rec {
+			rec[i] = strings.TrimSpace(rec[i])
+		}
+
+		if strings.Contains(strings.ToLower(rec[0]), "nombre") ||
+			strings.Contains(strings.ToLower(rec[0]), "first") ||
+			strings.Contains(strings.ToLower(rec[0]), "name") {
+			continue
+		}
+
+		var first, last, doc, birth, numS string
+
+		switch len(rec) {
+		case 5:
+			first, last, doc, birth, numS = rec[0], rec[1], rec[2], rec[3], rec[4]
+		case 6:
+			first, last, doc, birth, numS = rec[1], rec[2], rec[3], rec[4], rec[5]
+		default:
+			return nil, fmt.Errorf("unexpected csv columns: %d", len(rec))
+		}
+
+		num, err := parseUint32(numS)
+		if err != nil {
+			return nil, err
+		}
+		if birth == "" {
+			return nil, fmt.Errorf("empty birthdate")
+		}
+
+		bets = append(bets, common.Bet{
+			Agency:    agency,
+			FirstName: first,
+			LastName:  last,
+			Document:  doc,
+			Birthdate: birth,
+			Number:    num,
+		})
+	}
+
+	return bets, nil
+}
+
+func chunkBets(all []common.Bet, max int) [][]common.Bet {
+	if max <= 0 {
+		max = 1
+	}
+	var out [][]common.Bet
+	for i := 0; i < len(all); i += max {
+		j := i + max
+		if j > len(all) {
+			j = len(all)
+		}
+		out = append(out, all[i:j])
+	}
+	return out
 }
 
 func main() {
@@ -134,14 +217,13 @@ func main() {
 	if err != nil || agencyID < 1 || agencyID > 255 {
 		log.Criticalf("invalid agency id (config id): %v", v.GetString("id"))
 	}
+	agency := uint8(agencyID)
 
-	bet := common.Bet{
-		Agency:    uint8(agencyID),
-		FirstName: mustEnv("NOMBRE"),
-		LastName:  mustEnv("APELLIDO"),
-		Document:  mustEnv("DOCUMENTO"),
-		Birthdate: mustEnv("NACIMIENTO"),
-		Number:    mustUint32Env("NUMERO"),
+	datasetPath := mustEnv("AGENCY_DATASET")
+
+	maxAmount := v.GetInt("batch.maxAmount")
+	if maxAmount <= 0 {
+		maxAmount = 32
 	}
 
 	clientCfg := common.ClientConfig{
@@ -153,19 +235,33 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer stop()
 
-	go func() {
-		<-ctx.Done()
-		log.Infof("action: signal_received | result: success | signal: SIGTERM | component: client | client_id: %v", clientCfg.ID)
-	}()
 
-	// Mandá UNA apuesta (ej5)
-	if err := c.SendBetOnce(bet); err != nil {
-		log.Errorf("action: apuesta_enviada | result: fail | dni: %s | numero: %d | error: %v", bet.Document, bet.Number, err)
-		return
+	bets, err := readBetsFromCSV(datasetPath, agency)
+	if err != nil {
+		log.Criticalf("failed to read dataset: %v", err)
 	}
-	log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %d", bet.Document, bet.Number)
 
-	// Mantener vivo hasta SIGTERM para shutdown graceful (ej4)
+	// Enviar en batches
+	for _, batch := range chunkBets(bets, maxAmount) {
+		select {
+		case <-ctx.Done():
+			log.Infof("action: shutdown | result: success | component: client | client_id: %v", clientCfg.ID)
+			return
+		default:
+		}
+
+		conn, err := net.Dial("tcp", clientCfg.ServerAddress)
+		if err != nil {
+			log.Criticalf("action: connect | result: fail | client_id: %v | error: %v", clientCfg.ID, err)
+		}
+
+		err = common.SendBatch(conn, batch)
+		_ = conn.Close()
+		if err != nil {
+			log.Criticalf("batch send failed: %v", err)
+		}
+	}
+
 	<-ctx.Done()
 	log.Infof("action: shutdown | result: success | component: client | client_id: %v", clientCfg.ID)
 }
