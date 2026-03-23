@@ -64,57 +64,67 @@ func (c *Client) createClientSocket() error {
 
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop(ctx context.Context) {
-    for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
-        // If SIGTERM arrived, exit gracefully
-        select {
-        case <-ctx.Done():
-            log.Infof("action: shutdown | result: success | component: client | client_id: %v", c.config.ID)
-            c.closeConn()
-            return
-        default:
-        }
+	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
+		// If SIGTERM arrived, exit gracefully
+		select {
+		case <-ctx.Done():
+			log.Infof("action: shutdown | result: success | component: client | client_id: %v", c.config.ID)
+			c.closeConn()
+			return
+		default:
+		}
 
-        if err := c.createClientSocket(); err != nil {
-            c.closeConn()
-            return
-        }
+		if err := c.createClientSocket(); err != nil {
+			c.closeConn()
+			return
+		}
 
-        // Send message
-        _, err := fmt.Fprintf(
-            c.conn,
-            "[CLIENT %v] Message N°%v\n",
-            c.config.ID,
-            msgID,
-        )
-        if err != nil {
-            log.Errorf("action: send_message | result: fail | client_id: %v | error: %v", c.config.ID, err)
-            c.closeConn()
-            return
-        }
+		// Send message
+		_, err := fmt.Fprintf(
+			c.conn,
+			"[CLIENT %v] Message N°%v\n",
+			c.config.ID,
+			msgID,
+		)
+		if err != nil {
+			log.Errorf("action: send_message | result: fail | client_id: %v | error: %v", c.config.ID, err)
+			c.closeConn()
+			return
+		}
 
-        msg, err := bufio.NewReader(c.conn).ReadString('\n')
-        c.closeConn()
+		msg, err := bufio.NewReader(c.conn).ReadString('\n')
+		c.closeConn()
 
-        if err != nil {
-            log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
-                c.config.ID,
-                err,
-            )
-            return
-        }
+		if err != nil {
+			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
+				c.config.ID,
+				err,
+			)
+			return
+		}
 
-        log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-            c.config.ID,
-            msg,
-        )
+		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
+			c.config.ID,
+			msg,
+		)
 
-        select {
-        case <-ctx.Done():
-            log.Infof("action: shutdown | result: success | component: client | client_id: %v", c.config.ID)
-            return
-        case <-time.After(c.config.LoopPeriod):
-        }
-    }
+		select {
+		case <-ctx.Done():
+			log.Infof("action: shutdown | result: success | component: client | client_id: %v", c.config.ID)
+			return
+		case <-time.After(c.config.LoopPeriod):
+		}
+	}
 
-    log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+}
+
+func (c *Client) SendBetOnce(bet Bet) error {
+	conn, err := net.Dial("tcp", c.config.ServerAddress)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	return SendBet(conn, bet)
 }
