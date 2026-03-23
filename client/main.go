@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal" 
+	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
@@ -103,53 +103,54 @@ func mustEnv(key string) string {
 }
 
 func main() {
-	v, err := InitConfig()
-	if err != nil {
-		log.Criticalf("%s", err)
-	}
-	if err := InitLogger(v.GetString("log.level")); err != nil {
-		log.Criticalf("%s", err)
-	}
+    v, err := InitConfig()
+    if err != nil {
+        log.Criticalf("%s", err)
+    }
+    if err := InitLogger(v.GetString("log.level")); err != nil {
+        log.Criticalf("%s", err)
+    }
 
-	agencyID, err := strconv.Atoi(v.GetString("id"))
-	if err != nil || agencyID < 1 || agencyID > 255 {
-		log.Criticalf("invalid agency id (config id): %v", v.GetString("id"))
-	}
+    agencyID, err := strconv.Atoi(v.GetString("id"))
+    if err != nil || agencyID < 1 || agencyID > 255 {
+        log.Criticalf("invalid agency id (config id): %v", v.GetString("id"))
+    }
 
-	num, err := strconv.Atoi(mustEnv("NUMERO"))
-	if err != nil || num < 0 {
-		log.Criticalf("invalid NUMERO: %v", os.Getenv("NUMERO"))
-	}
+    num, err := strconv.Atoi(mustEnv("NUMERO"))
+    if err != nil || num < 0 {
+        log.Criticalf("invalid NUMERO: %v", os.Getenv("NUMERO"))
+    }
 
-	clientCfg := common.ClientConfig{
-		ServerAddress: v.GetString("server.address"),
-		ID:            v.GetString("id"),
-	}
-	c := common.NewClient(clientCfg)
+    clientCfg := common.ClientConfig{
+        ServerAddress: v.GetString("server.address"),
+        ID:            v.GetString("id"),
+    }
+    c := common.NewClient(clientCfg)
 
-	bet := common.Bet{
-		Agency:    uint8(agencyID),
-		FirstName: mustEnv("NOMBRE"),
-		LastName:  mustEnv("APELLIDO"),
-		Document:  mustEnv("DOCUMENTO"),
-		Birthdate: mustEnv("NACIMIENTO"),
-		Number:    uint32(num),
-	}
+    bet := common.Bet{
+        Agency:    uint8(agencyID),
+        FirstName: mustEnv("NOMBRE"),
+        LastName:  mustEnv("APELLIDO"),
+        Document:  mustEnv("DOCUMENTO"),
+        Birthdate: mustEnv("NACIMIENTO"),
+        Number:    uint32(num),
+    }
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
+    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
     defer stop()
 
     go func() {
         <-ctx.Done()
-        // Log de SIGTERM
         log.Infof("action: signal_received | result: success | signal: SIGTERM | component: client | client_id: %v", clientCfg.ID)
     }()
 
-	if err := c.SendBetOnce(bet); err != nil {
+    if err := c.SendBetOnce(bet); err != nil {
         log.Errorf("action: apuesta_enviada | result: fail | dni: %s | numero: %d | error: %v", bet.Document, bet.Number, err)
         return
     }
 
     log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %d", bet.Document, bet.Number)
-	client.StartClientLoop(ctx)
+
+    <-ctx.Done()
+    log.Infof("action: shutdown | result: success | component: client | client_id: %v", clientCfg.ID)
 }
