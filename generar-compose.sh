@@ -32,6 +32,9 @@ YAML
 
 if [[ "$N" -gt 0 ]]; then
   for i in $(seq 1 "$N"); do
+    DNI=$((42123123 + i))
+    NUMERO=$((7000 + i))
+
     cat >> "$OUT" <<YAML
   client${i}:
     container_name: client${i}
@@ -39,6 +42,11 @@ if [[ "$N" -gt 0 ]]; then
     entrypoint: /client
     environment:
       - CLI_ID=${i}
+      - NOMBRE=Nombre${i}
+      - APELLIDO=Apellido${i}
+      - DOCUMENTO=${DNI}
+      - NACIMIENTO=1999-12-25
+      - NUMERO=${NUMERO}
     networks:
       - testing_net
     volumes:
