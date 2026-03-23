@@ -27,36 +27,24 @@ var log = logging.MustGetLogger("log")
 func InitConfig() (*viper.Viper, error) {
 	v := viper.New()
 
-	// Configure viper to read env variables with the CLI_ prefix
 	v.AutomaticEnv()
 	v.SetEnvPrefix("cli")
-	// Use a replacer to replace env variables underscores with points. This let us
-	// use nested configurations in the config file and at the same time define
-	// env variables for the nested configurations
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
-	// Add env variables supported
-	v.BindEnv("id")
-	v.BindEnv("server", "address")
-	v.BindEnv("loop", "period")
-	v.BindEnv("loop", "amount")
-	v.BindEnv("log", "level")
+	_ = v.BindEnv("id")
+	_ = v.BindEnv("server.address")
+	_ = v.BindEnv("loop.period")
+	_ = v.BindEnv("loop.amount")
+	_ = v.BindEnv("log.level")
 
-	// Try to read configuration from config file. If config file
-	// does not exists then ReadInConfig will fail but configuration
-	// can be loaded from the environment variables so we shouldn't
-	// return an error in that case
 	v.SetConfigFile("./config.yaml")
 	if err := v.ReadInConfig(); err != nil {
 		fmt.Printf("Configuration could not be read from config file. Using env variables instead")
 	}
 
-	// Parse time.Duration variables and return an error if those variables cannot be parsed
-
 	if _, err := time.ParseDuration(v.GetString("loop.period")); err != nil {
 		return nil, errors.Wrapf(err, "Could not parse CLI_LOOP_PERIOD env var as time.Duration.")
 	}
-
 	return v, nil
 }
 
@@ -115,10 +103,10 @@ func uint32EnvOrDefault(key string, def uint32) uint32 {
 }
 
 func mustEnv(key string) string {
-	v := os.Getenv(key)
+	v := strings.TrimSpace(os.Getenv(key))
 	if v == "" {
-		// CRITICAL y exit: es lo correcto según enunciado (si falta la apuesta no podés enviar nada)
-		log.Criticalf("missing env var: %s", key)
+		_, _ = fmt.Fprintf(os.Stderr, "missing env var: %s\n", key)
+		os.Exit(1)
 	}
 	return v
 }
@@ -127,7 +115,8 @@ func mustUint32Env(key string) uint32 {
 	raw := mustEnv(key)
 	n, err := strconv.Atoi(raw)
 	if err != nil || n < 0 {
-		log.Criticalf("invalid %s: %q", key, raw)
+		_, _ = fmt.Fprintf(os.Stderr, "invalid %s: %q\n", key, raw)
+		os.Exit(1)
 	}
 	return uint32(n)
 }
