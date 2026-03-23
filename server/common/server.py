@@ -2,6 +2,9 @@ import socket
 import logging
 import threading
 
+from common.protocol import recv_frame, send_frame, decode_bet, encode_ack
+from common.utils import Bet, store_bets
+
 class Server:
     def __init__(self, port, listen_backlog):
         self._shutdown_event = threading.Event()
@@ -49,19 +52,33 @@ class Server:
 
     def __handle_client_connection(self, client_sock):
         try:
-            msg = client_sock.recv(1024).rstrip().decode('utf-8')
-            addr = client_sock.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            client_sock.send("{}\n".format(msg).encode('utf-8'))
-        except OSError as e:
-            logging.error(f"action: receive_message | result: fail | error: {e}")
-        finally:
+            payload = recv_frame(client_sock)
+            req = decode_bet(payload)
+
+            bet = Bet(
+                str(req["agency"]),
+                req["first_name"],
+                req["last_name"],
+                req["document"],
+                req["birthdate"],
+                str(req["number"]),
+            )
+
+            store_bets([bet])
+
+            logging.info(
+                f"action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}"
+            )
+
+            send_frame(client_sock, encode_ack(True))
+        except Exception as e:
+            logging.error(f"action: apuesta_almacenada | result: fail | error: {e}")
             try:
-                client_sock.shutdown(socket.SHUT_RDWR)
-            except OSError:
+                send_frame(client_sock, encode_ack(False))
+            except Exception:
                 pass
+        finally:
             client_sock.close()
-            logging.info("action: close_fd | result: success | component: server | fd: client_socket")
 
     def __accept_new_connection(self):
         logging.info('action: accept_connections | result: in_progress')
