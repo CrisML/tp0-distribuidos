@@ -4,6 +4,9 @@ import struct
 MSG_BET = 0x01
 MSG_ACK = 0x02
 MSG_BATCH = 0x03
+MSG_FIN = 0x04
+MSG_GET_WINNERS = 0x05
+MSG_WINNERS = 0x06
 
 ACK_OK = 0x00
 ACK_ERROR = 0x01
@@ -127,5 +130,15 @@ def decode_message(payload: bytes) -> dict:
 
 
 def encode_ack(ok: bool) -> bytes:
-    status = ACK_OK if ok else ACK_ERROR
-    return bytes([MSG_ACK, status])
+    return bytes([MSG_ACK, ACK_OK if ok else ACK_ERROR])
+
+
+def encode_winners(dnis: list[str]) -> bytes:
+    out = bytearray()
+    out.append(MSG_WINNERS)
+    out += struct.pack(">H", len(dnis))
+    for dni in dnis:
+        b = dni.encode("utf-8")
+        out += struct.pack(">H", len(b))
+        out += b
+    return bytes(out)
