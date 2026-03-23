@@ -3,6 +3,7 @@ import struct
 
 MSG_BET = 0x01
 MSG_ACK = 0x02
+MSG_BATCH = 0x03
 
 ACK_OK = 0x00
 ACK_ERROR = 0x01
@@ -59,6 +60,23 @@ def _read_str(buf: bytes, off: int) -> tuple[str, int]:
     return s, off + ln
 
 
+def _read_bet_body(buf: bytes, off: int) -> tuple[dict, int]:
+    agency, off = _read_u8(buf, off)
+    first_name, off = _read_str(buf, off)
+    last_name, off = _read_str(buf, off)
+    document, off = _read_str(buf, off)
+    birthdate, off = _read_str(buf, off)
+    number, off = _read_u32(buf, off)
+    return {
+        "agency": agency,
+        "first_name": first_name,
+        "last_name": last_name,
+        "document": document,
+        "birthdate": birthdate,
+        "number": number,
+    }, off
+
+
 def decode_bet(payload: bytes) -> dict:
     off = 0
     msg_type, off = _read_u8(payload, off)
@@ -83,6 +101,29 @@ def decode_bet(payload: bytes) -> dict:
         "birthdate": birthdate,
         "number": number,
     }
+
+
+def decode_message(payload: bytes) -> dict:
+    off = 0
+    msg_type, off = _read_u8(payload, off)
+
+    if msg_type == MSG_BET:
+        bet, off = _read_bet_body(payload, off)
+        if off != len(payload):
+            raise ValueError("extra bytes in payload")
+        return {"type": "BET", "bets": [bet]}
+
+    if msg_type == MSG_BATCH:
+        cnt, off = _read_u16(payload, off)
+        bets = []
+        for _ in range(cnt):
+            bet, off = _read_bet_body(payload, off)
+            bets.append(bet)
+        if off != len(payload):
+            raise ValueError("extra bytes in payload")
+        return {"type": "BATCH", "bets": bets}
+
+    raise ValueError("unknown msg type")
 
 
 def encode_ack(ok: bool) -> bytes:

@@ -2,7 +2,7 @@ import socket
 import logging
 import threading
 
-from common.protocol import recv_frame, send_frame, decode_bet, encode_ack
+from common.protocol import recv_frame, send_frame, decode_message, encode_ack
 from common.utils import Bet, store_bets
 
 class Server:
@@ -53,26 +53,40 @@ class Server:
     def __handle_client_connection(self, client_sock):
         try:
             payload = recv_frame(client_sock)
-            req = decode_bet(payload)
+            msg = decode_message(payload)
 
-            bet = Bet(
-                str(req["agency"]),
-                req["first_name"],
-                req["last_name"],
-                req["document"],
-                req["birthdate"],
-                str(req["number"]),
-            )
+            bets_in = msg["bets"]
+            cantidad = len(bets_in)
 
-            store_bets([bet])
+            bets = []
+            for b in bets_in:
+                bets.append(
+                    Bet(
+                        str(b["agency"]),
+                        b["first_name"],
+                        b["last_name"],
+                        b["document"],
+                        b["birthdate"],
+                        str(b["number"]),
+                    )
+                )
 
-            logging.info(
-                f"action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}"
-            )
+            # Si store_bets lanza excepción por alguna apuesta, consideramos batch fail
+            store_bets(bets)
+
+            logging.info(f"action: apuesta_recibida | result: success | cantidad: {cantidad}")
+            # (opcional) mantener log individual del ej5 si querés compatibilidad:
+            for bet in bets:
+                logging.info(f"action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}")
 
             send_frame(client_sock, encode_ack(True))
         except Exception as e:
-            logging.error(f"action: apuesta_almacenada | result: fail | error: {e}")
+            try:
+                # si llegamos a parsear lo suficiente como para conocer cantidad:
+                cantidad = cantidad if "cantidad" in locals() else 0
+            except Exception:
+                cantidad = 0
+            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {cantidad}")
             try:
                 send_frame(client_sock, encode_ack(False))
             except Exception:
