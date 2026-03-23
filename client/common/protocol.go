@@ -8,8 +8,9 @@ import (
 )
 
 const (
-    msgTypeBet byte = 0x01
-    msgTypeAck byte = 0x02
+    msgTypeBet   byte = 0x01
+    msgTypeAck   byte = 0x02
+    msgTypeBatch byte = 0x03
 
     ackOK    byte = 0x00
     ackError byte = 0x01
@@ -46,10 +47,67 @@ func SendBet(conn net.Conn, bet Bet) error {
     return nil
 }
 
-func encodeBet(b Bet) ([]byte, error) {
-    out := make([]byte, 0, 1+1+2+len(b.FirstName)+2+len(b.LastName)+2+len(b.Document)+2+len(b.Birthdate)+4)
+func SendBatch(conn net.Conn, bets []Bet) error {
+    payload, err := encodeBatch(bets)
+    if err != nil {
+        return err
+    }
+    if err := writeFrame(conn, payload); err != nil {
+        return err
+    }
 
+    resp, err := readFrame(conn)
+    if err != nil {
+        return err
+    }
+    if len(resp) < 2 || resp[0] != msgTypeAck {
+        return fmt.Errorf("invalid ack")
+    }
+    if resp[1] != ackOK {
+        return fmt.Errorf("server returned error")
+    }
+    return nil
+}
+
+func encodeBet(b Bet) ([]byte, error) {
+    body, err := encodeBetBody(b)
+    if err != nil {
+        return nil, err
+    }
+    out := make([]byte, 0, 1+len(body))
     out = append(out, msgTypeBet)
+    out = append(out, body...)
+    return out, nil
+}
+
+func encodeBatch(bets []Bet) ([]byte, error) {
+    if len(bets) > 0xFFFF {
+        return nil, fmt.Errorf("too many bets in batch")
+    }
+
+    out := make([]byte, 0, 1+2+len(bets)*64)
+    out = append(out, msgTypeBatch)
+
+    var cnt [2]byte
+    binary.BigEndian.PutUint16(cnt[:], uint16(len(bets)))
+    out = append(out, cnt[:]...)
+
+    out = out[:0]
+    out = append(out, msgTypeBatch)
+    out = append(out, cnt[:]...)
+    for _, b := range bets {
+        bin, err := encodeBetBody(b)
+        if err != nil {
+            return nil, err
+        }
+        out = append(out, bin...)
+    }
+    return out, nil
+}
+
+func encodeBetBody(b Bet) ([]byte, error) {
+    out := make([]byte, 0, 1+2+len(b.FirstName)+2+len(b.LastName)+2+len(b.Document)+2+len(b.Birthdate)+4)
+
     out = append(out, byte(b.Agency))
 
     var err error
@@ -73,7 +131,6 @@ func encodeBet(b Bet) ([]byte, error) {
     var num [4]byte
     binary.BigEndian.PutUint32(num[:], b.Number)
     out = append(out, num[:]...)
-
     return out, nil
 }
 
