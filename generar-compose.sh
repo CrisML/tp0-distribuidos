@@ -21,6 +21,7 @@ services:
     container_name: server
     image: server:latest
     entrypoint: python3 /main.py
+    working_dir: /
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
