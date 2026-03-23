@@ -94,63 +94,89 @@ func PrintConfig(v *viper.Viper) {
 	)
 }
 
+func envOrDefault(key, def string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	return v
+}
+
+func uint32EnvOrDefault(key string, def uint32) uint32 {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return def
+	}
+	return uint32(n)
+}
+
 func mustEnv(key string) string {
-    v := os.Getenv(key)
-    if v == "" {
-        log.Criticalf("missing env var: %s", key)
-    }
-    return v
+	v := os.Getenv(key)
+	if v == "" {
+		// CRITICAL y exit: es lo correcto según enunciado (si falta la apuesta no podés enviar nada)
+		log.Criticalf("missing env var: %s", key)
+	}
+	return v
+}
+
+func mustUint32Env(key string) uint32 {
+	raw := mustEnv(key)
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		log.Criticalf("invalid %s: %q", key, raw)
+	}
+	return uint32(n)
 }
 
 func main() {
-    v, err := InitConfig()
-    if err != nil {
-        log.Criticalf("%s", err)
-    }
-    if err := InitLogger(v.GetString("log.level")); err != nil {
-        log.Criticalf("%s", err)
-    }
+	v, err := InitConfig()
+	if err != nil {
+		log.Criticalf("%s", err)
+	}
+	if err := InitLogger(v.GetString("log.level")); err != nil {
+		log.Criticalf("%s", err)
+	}
 
-    agencyID, err := strconv.Atoi(v.GetString("id"))
-    if err != nil || agencyID < 1 || agencyID > 255 {
-        log.Criticalf("invalid agency id (config id): %v", v.GetString("id"))
-    }
+	agencyID, err := strconv.Atoi(v.GetString("id"))
+	if err != nil || agencyID < 1 || agencyID > 255 {
+		log.Criticalf("invalid agency id (config id): %v", v.GetString("id"))
+	}
 
-    num, err := strconv.Atoi(mustEnv("NUMERO"))
-    if err != nil || num < 0 {
-        log.Criticalf("invalid NUMERO: %v", os.Getenv("NUMERO"))
-    }
+	bet := common.Bet{
+		Agency:    uint8(agencyID),
+		FirstName: mustEnv("NOMBRE"),
+		LastName:  mustEnv("APELLIDO"),
+		Document:  mustEnv("DOCUMENTO"),
+		Birthdate: mustEnv("NACIMIENTO"),
+		Number:    mustUint32Env("NUMERO"),
+	}
 
-    clientCfg := common.ClientConfig{
-        ServerAddress: v.GetString("server.address"),
-        ID:            v.GetString("id"),
-    }
-    c := common.NewClient(clientCfg)
+	clientCfg := common.ClientConfig{
+		ServerAddress: v.GetString("server.address"),
+		ID:            v.GetString("id"),
+	}
+	c := common.NewClient(clientCfg)
 
-    bet := common.Bet{
-        Agency:    uint8(agencyID),
-        FirstName: mustEnv("NOMBRE"),
-        LastName:  mustEnv("APELLIDO"),
-        Document:  mustEnv("DOCUMENTO"),
-        Birthdate: mustEnv("NACIMIENTO"),
-        Number:    uint32(num),
-    }
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
+	defer stop()
 
-    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
-    defer stop()
+	go func() {
+		<-ctx.Done()
+		log.Infof("action: signal_received | result: success | signal: SIGTERM | component: client | client_id: %v", clientCfg.ID)
+	}()
 
-    go func() {
-        <-ctx.Done()
-        log.Infof("action: signal_received | result: success | signal: SIGTERM | component: client | client_id: %v", clientCfg.ID)
-    }()
+	// Mandá UNA apuesta (ej5)
+	if err := c.SendBetOnce(bet); err != nil {
+		log.Errorf("action: apuesta_enviada | result: fail | dni: %s | numero: %d | error: %v", bet.Document, bet.Number, err)
+		return
+	}
+	log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %d", bet.Document, bet.Number)
 
-    if err := c.SendBetOnce(bet); err != nil {
-        log.Errorf("action: apuesta_enviada | result: fail | dni: %s | numero: %d | error: %v", bet.Document, bet.Number, err)
-        return
-    }
-
-    log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %d", bet.Document, bet.Number)
-
-    <-ctx.Done()
-    log.Infof("action: shutdown | result: success | component: client | client_id: %v", clientCfg.ID)
+	// Mantener vivo hasta SIGTERM para shutdown graceful (ej4)
+	<-ctx.Done()
+	log.Infof("action: shutdown | result: success | component: client | client_id: %v", clientCfg.ID)
 }
