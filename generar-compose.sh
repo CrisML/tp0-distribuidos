@@ -42,15 +42,12 @@ if [[ "$N" -gt 0 ]]; then
     entrypoint: /client
     environment:
       - CLI_ID=${i}
-      - NOMBRE=Nombre${i}
-      - APELLIDO=Apellido${i}
-      - DOCUMENTO=${DNI}
-      - NACIMIENTO=1999-12-25
-      - NUMERO=${NUMERO}
+      - AGENCY_DATASET=/data/agency-${i}.csv
     networks:
       - testing_net
     volumes:
       - ./client/config.yaml:/config.yaml
+      - ./.data/agency-${i}.csv:/data/agency-${i}.csv:ro
     depends_on:
       - server
 
