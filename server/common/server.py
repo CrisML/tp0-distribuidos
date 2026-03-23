@@ -3,7 +3,7 @@ import logging
 import threading
 import time
 
-from common.protocol import recv_frame, send_frame, decode_message, encode_ack, decode_simple, MSG_FIN, MSG_GET_WINNERS
+from common.protocol import recv_frame, send_frame, decode_message, encode_ack, MSG_FIN, MSG_GET_WINNERS
 from common.utils import Bet, store_bets, load_bets, has_won
 
 class Server:
