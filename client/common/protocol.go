@@ -8,9 +8,12 @@ import (
 )
 
 const (
-    msgTypeBet   byte = 0x01
-    msgTypeAck   byte = 0x02
-    msgTypeBatch byte = 0x03
+    msgTypeBet        byte = 0x01
+    msgTypeAck        byte = 0x02
+    msgTypeBatch      byte = 0x03
+    msgTypeFin        byte = 0x04
+    msgTypeGetWinners byte = 0x05
+    msgTypeWinners    byte = 0x06
 
     ackOK    byte = 0x00
     ackError byte = 0x01
@@ -67,6 +70,89 @@ func SendBatch(conn net.Conn, bets []Bet) error {
         return fmt.Errorf("server returned error")
     }
     return nil
+}
+
+func SendFIN(conn net.Conn, agency uint8) error {
+    payload := []byte{msgTypeFin, agency}
+    if err := writeFrame(conn, payload); err != nil {
+        return err
+    }
+    resp, err := readFrame(conn)
+    if err != nil {
+        return err
+    }
+    if len(resp) < 2 || resp[0] != msgTypeAck {
+        return fmt.Errorf("invalid ack")
+    }
+    if resp[1] != ackOK {
+        return fmt.Errorf("server returned error on FIN")
+    }
+    return nil
+}
+
+func GetWinners(conn net.Conn, agency uint8) ([]string, error) {
+    payload := []byte{msgTypeGetWinners, agency}
+    if err := writeFrame(conn, payload); err != nil {
+        return nil, err
+    }
+    resp, err := readFrame(conn)
+    if err != nil {
+        return nil, err
+    }
+    if len(resp) == 0 || resp[0] != msgTypeWinners {
+        if len(resp) >= 2 && resp[0] == msgTypeAck && resp[1] == ackError {
+            return nil, fmt.Errorf("winners not available yet")
+        }
+        return nil, fmt.Errorf("invalid winners response")
+    }
+
+    off := 1
+    if len(resp) < off+2 {
+        return nil, fmt.Errorf("short winners response")
+    }
+    cnt := int(binary.BigEndian.Uint16(resp[off : off+2]))
+    off += 2
+
+    out := make([]string, 0, cnt)
+    for i := 0; i < cnt; i++ {
+        if len(resp) < off+2 {
+            return nil, fmt.Errorf("short dni len")
+        }
+        l := int(binary.BigEndian.Uint16(resp[off : off+2]))
+        off += 2
+        if len(resp) < off+l {
+            return nil, fmt.Errorf("short dni bytes")
+        }
+        out = append(out, string(resp[off:off+l]))
+        off += l
+    }
+    if off != len(resp) {
+        return nil, fmt.Errorf("extra bytes in winners response")
+    }
+    return out, nil
+}
+
+func EncodeWinnersDNIs(dnis []string) ([]byte, error) {
+    if len(dnis) > 0xFFFF {
+        return nil, fmt.Errorf("too many winners")
+    }
+    out := make([]byte, 0, 1+2+len(dnis)*16)
+    out = append(out, msgTypeWinners)
+
+    var cnt [2]byte
+    binary.BigEndian.PutUint16(cnt[:], uint16(len(dnis)))
+    out = append(out, cnt[:]...)
+
+    for _, dni := range dnis {
+        if len(dni) > 0xFFFF {
+            return nil, fmt.Errorf("dni too long")
+        }
+        var l [2]byte
+        binary.BigEndian.PutUint16(l[:], uint16(len(dni)))
+        out = append(out, l[:]...)
+        out = append(out, []byte(dni)...)
+    }
+    return out, nil
 }
 
 func encodeBet(b Bet) ([]byte, error) {

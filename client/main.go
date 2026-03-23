@@ -264,6 +264,31 @@ func main() {
 		}
 	}
 
+	{
+		conn, err := net.Dial("tcp", clientCfg.ServerAddress)
+		if err != nil {
+			log.Criticalf("action: connect | result: fail | client_id: %v | error: %v", clientCfg.ID, err)
+		}
+		if err := common.SendFIN(conn, agency); err != nil {
+			_ = conn.Close()
+			log.Criticalf("failed to send FIN: %v", err)
+		}
+		_ = conn.Close()
+	}
+
+	{
+		conn, err := net.Dial("tcp", clientCfg.ServerAddress)
+		if err != nil {
+			log.Criticalf("action: connect | result: fail | client_id: %v | error: %v", clientCfg.ID, err)
+		}
+		winners, err := common.GetWinners(conn, agency)
+		_ = conn.Close()
+		if err != nil {
+			log.Criticalf("failed to get winners: %v", err)
+		}
+
+		log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
+	}
 
 	log.Infof("action: loop_finished | result: success | client_id: %v", clientCfg.ID)
 }
