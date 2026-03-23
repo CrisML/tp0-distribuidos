@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/csv"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -73,38 +71,6 @@ func InitLogger(logLevel string) error {
 	return nil
 }
 
-// PrintConfig Print all the configuration parameters of the program.
-// For debugging purposes only
-func PrintConfig(v *viper.Viper) {
-	log.Infof("action: config | result: success | client_id: %s | server_address: %s | loop_amount: %v | loop_period: %v | log_level: %s",
-		v.GetString("id"),
-		v.GetString("server.address"),
-		v.GetInt("loop.amount"),
-		v.GetDuration("loop.period"),
-		v.GetString("log.level"),
-	)
-}
-
-func envOrDefault(key, def string) string {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	return v
-}
-
-func uint32EnvOrDefault(key string, def uint32) uint32 {
-	raw := os.Getenv(key)
-	if raw == "" {
-		return def
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n < 0 {
-		return def
-	}
-	return uint32(n)
-}
-
 func mustEnv(key string) string {
 	v := strings.TrimSpace(os.Getenv(key))
 	if v == "" {
@@ -112,96 +78,6 @@ func mustEnv(key string) string {
 		os.Exit(1)
 	}
 	return v
-}
-
-func parseUint32(raw string) (uint32, error) {
-	n, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || n < 0 {
-		return 0, fmt.Errorf("invalid uint32: %q", raw)
-	}
-	return uint32(n), nil
-}
-
-func readBetsFromCSV(path string, agency uint8) ([]common.Bet, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	r := csv.NewReader(f)
-	r.Comma = ','
-	r.FieldsPerRecord = -1
-
-	var bets []common.Bet
-	for {
-		rec, err := r.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		if len(rec) == 0 {
-			continue
-		}
-
-		for i := range rec {
-			rec[i] = strings.TrimSpace(rec[i])
-		}
-
-		if strings.Contains(strings.ToLower(rec[0]), "nombre") ||
-			strings.Contains(strings.ToLower(rec[0]), "first") ||
-			strings.Contains(strings.ToLower(rec[0]), "name") {
-			continue
-		}
-
-		var first, last, doc, birth, numS string
-
-		switch len(rec) {
-		case 5:
-			first, last, doc, birth, numS = rec[0], rec[1], rec[2], rec[3], rec[4]
-		case 6:
-			first, last, doc, birth, numS = rec[1], rec[2], rec[3], rec[4], rec[5]
-		default:
-			return nil, fmt.Errorf("unexpected csv columns: %d", len(rec))
-		}
-
-		num, err := parseUint32(numS)
-		if err != nil {
-			return nil, err
-		}
-		if birth == "" {
-			return nil, fmt.Errorf("empty birthdate")
-		}
-
-		bets = append(bets, common.Bet{
-			Agency:    agency,
-			FirstName: first,
-			LastName:  last,
-			Document:  doc,
-			Birthdate: birth,
-			Number:    num,
-		})
-	}
-
-	return bets, nil
-}
-
-func chunkBets(all []common.Bet, max int) [][]common.Bet {
-	if max <= 0 {
-		max = 1
-	}
-	var out [][]common.Bet
-	for i := 0; i < len(all); i += max {
-		j := i + max
-		if j > len(all) {
-			j = len(all)
-		}
-		out = append(out, all[i:j])
-	}
-	return out
 }
 
 func main() {
@@ -226,8 +102,12 @@ func main() {
 		maxAmount = 32
 	}
 
-	log.Infof("action: config | result: success | client_id: %s | dataset: %s | batch_max_amount: %d | server_address: %s",
-		v.GetString("id"), datasetPath, maxAmount, v.GetString("server.address"),
+	log.Infof(
+		"action: config | result: success | client_id: %s | dataset: %s | batch_max_amount: %d | server_address: %s",
+		v.GetString("id"),
+		datasetPath,
+		maxAmount,
+		v.GetString("server.address"),
 	)
 
 	clientCfg := common.ClientConfig{
@@ -239,12 +119,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer stop()
 
-	bets, err := readBetsFromCSV(datasetPath, agency)
+	bets, err := common.ReadBetsFromCSV(datasetPath, agency)
 	if err != nil {
 		log.Criticalf("failed to read dataset: %v", err)
 	}
 
-	for _, batch := range chunkBets(bets, maxAmount) {
+	for _, batch := range common.ChunkBets(bets, maxAmount) {
 		select {
 		case <-ctx.Done():
 			log.Infof("action: shutdown | result: success | component: client | client_id: %v", clientCfg.ID)
