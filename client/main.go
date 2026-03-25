@@ -37,8 +37,10 @@ func InitConfig() (*viper.Viper, error) {
 	_ = v.BindEnv("loop.period")
 	_ = v.BindEnv("loop.amount")
 	_ = v.BindEnv("log.level")
+	_ = v.BindEnv("batch.maxAmount")
 
-	v.SetConfigFile("./config.yaml")
+
+	v.SetConfigFile("/config.yaml")
 	if err := v.ReadInConfig(); err != nil {
 		fmt.Printf("Configuration could not be read from config file. Using env variables instead")
 	}
