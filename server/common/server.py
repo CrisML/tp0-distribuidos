@@ -112,6 +112,10 @@ class Server:
         return c
 
     def __handle_client_connection(self, client_sock):
+        logging.debug(
+            "action: handler_start | result: success | thread: %s",
+            threading.current_thread().name,
+        )
         action = "unknown"
         try:
             payload = recv_frame(client_sock)
