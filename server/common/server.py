@@ -1,5 +1,6 @@
 import socket
 import logging
+import threading
 
 from common.protocol import (
     recv_frame,
@@ -29,6 +30,9 @@ class Server:
         # sockets esperando winners: list[(sock, agency)]
         self._pending_qwin = []
 
+        self._state_lock = threading.Lock()
+        self._workers: set[threading.Thread] = set()
+
     def stop(self):
         self._shutdown = True
         try:
@@ -36,12 +40,21 @@ class Server:
         except Exception:
             pass
 
-        for sock, _agency in list(self._pending_qwin):
+        with self._state_lock:
+            pending = list(self._pending_qwin)
+            self._pending_qwin.clear()
+
+        for sock, _agency in pending:
             try:
                 sock.close()
             except Exception:
                 pass
-        self._pending_qwin.clear()
+
+        for t in list(self._workers):
+            try:
+                t.join(timeout=1.0)
+            except Exception:
+                pass
 
     def __reply_winners(self, client_sock, agency: int):
         bets = load_bets()
@@ -53,26 +66,18 @@ class Server:
                 winners.append(str(b.document))
         send_frame(client_sock, encode_winners(winners))
 
-    def __maybe_finish_draw(self):
+    def __maybe_finish_draw_locked(self):
         if (not self._sorteo_done) and len(self._seen) > 0 and self._seen.issubset(self._finished):
             self._sorteo_done = True
             logging.info("action: sorteo | result: success")
 
             pending = list(self._pending_qwin)
             self._pending_qwin.clear()
-            for sock, agency in pending:
-                try:
-                    self.__reply_winners(sock, agency)
-                except Exception:
-                    try:
-                        send_frame(sock, encode_ack(False))
-                    except Exception:
-                        pass
-                finally:
-                    try:
-                        sock.close()
-                    except Exception:
-                        pass
+
+        else:
+            pending = []
+
+        return pending
 
     def run(self):
         while not self._shutdown:
@@ -83,9 +88,22 @@ class Server:
                     break
                 raise
 
-            self.__handle_client_connection(client_sock)
+            t = threading.Thread(target=self.__worker, args=(client_sock,), daemon=True)
+            with self._state_lock:
+                self._workers.add(t)
+            t.start()
 
         logging.info("action: shutdown | result: success | component: server")
+
+    def __worker(self, client_sock):
+        try:
+            self.__handle_client_connection(client_sock)
+        finally:
+            with self._state_lock:
+                try:
+                    self._workers.remove(threading.current_thread())
+                except KeyError:
+                    pass
 
     def __accept_new_connection(self):
         logging.info("action: accept_connections | result: in_progress")
@@ -95,7 +113,6 @@ class Server:
 
     def __handle_client_connection(self, client_sock):
         action = "unknown"
-        cantidad = 0
         try:
             payload = recv_frame(client_sock)
             if len(payload) < 1:
@@ -109,11 +126,26 @@ class Server:
                     raise ValueError("FIN payload too short")
                 agency = int(payload[1])
 
-                self._seen.add(agency)
-                self._finished.add(agency)
-                self.__maybe_finish_draw()
+                with self._state_lock:
+                    self._seen.add(agency)
+                    self._finished.add(agency)
+                    pending = self.__maybe_finish_draw_locked()
 
                 send_frame(client_sock, encode_ack(True))
+                client_sock.close()
+                for sock, ag in pending:
+                    try:
+                        self.__reply_winners(sock, ag)
+                    except Exception:
+                        try:
+                            send_frame(sock, encode_ack(False))
+                        except Exception:
+                            pass
+                    finally:
+                        try:
+                            sock.close()
+                        except Exception:
+                            pass
                 return
 
             if msg_type == MSG_GET_WINNERS:
@@ -122,9 +154,10 @@ class Server:
                     raise ValueError("GET_WINNERS payload too short")
                 agency = int(payload[1])
 
-                if not self._sorteo_done:
-                    self._pending_qwin.append((client_sock, agency))
-                    return 
+                with self._state_lock:
+                    if not self._sorteo_done:
+                        self._pending_qwin.append((client_sock, agency))
+                        return 
 
                 self.__reply_winners(client_sock, agency)
                 return
@@ -138,7 +171,8 @@ class Server:
             bets = []
             for b in bets_in:
                 agency = int(b["agency"])
-                self._seen.add(agency)
+                with self._state_lock:
+                    self._seen.add(agency)
 
                 bets.append(
                     Bet(
@@ -164,7 +198,9 @@ class Server:
                 pass
         finally:
             try:
-                if not any(sock is client_sock for sock, _ in self._pending_qwin):
+                with self._state_lock:
+                    is_pending = any(sock is client_sock for sock, _ in self._pending_qwin)
+                if not is_pending:
                     client_sock.close()
             except Exception:
                 pass
