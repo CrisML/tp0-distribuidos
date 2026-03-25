@@ -45,15 +45,21 @@ def main():
 
     initialize_log(logging_level)
 
-    # Log config parameters at the beginning of the program to verify the configuration
-    # of the component
     logging.debug(
         f"action: config | result: success | port: {port} | "
         f"listen_backlog: {listen_backlog} | logging_level: {logging_level}"
     )
 
+    try:
+        if os.path.isdir("./bets.csv"):
+            raise IsADirectoryError("./bets.csv is a directory")
+        open("./bets.csv", "w").close()
+    except Exception as e:
+        logging.error(f"action: init_storage | result: fail | error: {e}")
+        raise
+
     server = Server(port, listen_backlog)
-    
+
     def graceful_shutdown(signum=None, frame=None):
         logging.info("action: signal_received | result: success | signal: SIGTERM | component: server")
         server.stop()

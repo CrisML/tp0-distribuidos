@@ -48,7 +48,7 @@ if [[ "$N" -gt 0 ]]; then
       - testing_net
     volumes:
       - ./client/config.yaml:/config.yaml
-      - ./.data/agency-${i}.csv:/agency-${i}.csv
+      - ./.data/agency-${i}.csv:/data/agency-${i}.csv
     depends_on:
       - server
 
