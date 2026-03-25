@@ -36,9 +36,11 @@ func ReadBetsFromCSV(path string, agency uint8) ([]Bet, error) {
             rec[i] = strings.TrimSpace(rec[i])
         }
 
-        // saltear header
-        if strings.Contains(strings.ToLower(rec[0]), "name") || strings.Contains(strings.ToLower(rec[0]), "nombre") {
-            continue
+        if len(rec) > 0 {
+            c0 := strings.ToLower(rec[0])
+            if c0 == "name" || c0 == "nombre" {
+                continue
+            }
         }
 
         var first, last, doc, birth, numS string
