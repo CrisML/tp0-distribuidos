@@ -157,35 +157,18 @@ func main() {
 	}
 
 	{
-		var winners []string
-		var lastErr error
-
-		for attempt := 0; attempt < 200; attempt++ { 
-			conn, err := net.Dial("tcp", clientCfg.ServerAddress)
-			if err != nil {
-				lastErr = err
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-
-			winners, lastErr = common.GetWinners(conn, agency)
-			_ = conn.Close()
-
-			if lastErr == nil {
-				log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
-				goto winnersDone
-			}
-
-			if strings.Contains(lastErr.Error(), "not available yet") {
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-
-			time.Sleep(100 * time.Millisecond)
+		conn, err := net.Dial("tcp", clientCfg.ServerAddress)
+		if err != nil {
+			log.Criticalf("action: connect | result: fail | client_id: %v | error: %v", clientCfg.ID, err)
 		}
+		_ = conn.SetDeadline(time.Now().Add(290 * time.Second))
 
-		log.Criticalf("failed to get winners: %v", lastErr)
-		winnersDone:
+		winners, err := common.GetWinners(conn, agency)
+		_ = conn.Close()
+		if err != nil {
+			log.Criticalf("failed to get winners: %v", err)
+		}
+		log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
 	}
 
 	log.Infof("action: loop_finished | result: success | client_id: %v", clientCfg.ID)

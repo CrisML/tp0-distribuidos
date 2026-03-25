@@ -1,6 +1,5 @@
 import socket
 import logging
-import time
 
 from common.protocol import (
     recv_frame,
@@ -27,6 +26,7 @@ class Server:
         self._finished = set()
         self._sorteo_done = False
 
+        # sockets esperando winners: list[(sock, agency)]
         self._pending_qwin = []
 
     def stop(self):
@@ -35,13 +35,23 @@ class Server:
             self._server_socket.close()
         except Exception:
             pass
-        # cerrar pendientes
+
         for sock, _agency in list(self._pending_qwin):
             try:
                 sock.close()
             except Exception:
                 pass
         self._pending_qwin.clear()
+
+    def __reply_winners(self, client_sock, agency: int):
+        bets = load_bets()
+        winners = []
+        for b in bets:
+            if int(b.agency) != agency:
+                continue
+            if has_won(b):
+                winners.append(str(b.document))
+        send_frame(client_sock, encode_winners(winners))
 
     def __maybe_finish_draw(self):
         if (not self._sorteo_done) and len(self._seen) > 0 and self._seen.issubset(self._finished):
@@ -53,8 +63,7 @@ class Server:
             for sock, agency in pending:
                 try:
                     self.__reply_winners(sock, agency)
-                except Exception as e:
-                    logging.error(f"action: get_winners | result: fail | error: {e}")
+                except Exception:
                     try:
                         send_frame(sock, encode_ack(False))
                     except Exception:
@@ -84,20 +93,9 @@ class Server:
         logging.info(f"action: accept_connections | result: success | ip: {addr[0]}")
         return c
 
-    def __reply_winners(self, client_sock, agency: int):
-        bets = load_bets()
-        winners = []
-        for b in bets:
-            if int(b.agency) != agency:
-                continue
-            if has_won(b):
-                winners.append(str(b.document))
-        send_frame(client_sock, encode_winners(winners))
-
     def __handle_client_connection(self, client_sock):
         action = "unknown"
         cantidad = 0
-        should_close = True
         try:
             payload = recv_frame(client_sock)
             if len(payload) < 1:
@@ -125,13 +123,13 @@ class Server:
                 agency = int(payload[1])
 
                 if not self._sorteo_done:
-                    with self._cv:
-                        self._pending_qwin.append((client_sock, agency))
-                    return
+                    self._pending_qwin.append((client_sock, agency))
+                    return 
 
-                send_frame(client_sock, encode_ack(False))
+                self.__reply_winners(client_sock, agency)
                 return
 
+            # BET/BATCH
             action = "apuesta_recibida"
             msg = decode_message(payload)
             bets_in = msg["bets"]
@@ -140,8 +138,7 @@ class Server:
             bets = []
             for b in bets_in:
                 agency = int(b["agency"])
-                with self._cv:
-                    self._seen.add(agency)
+                self._seen.add(agency)
 
                 bets.append(
                     Bet(
@@ -157,20 +154,17 @@ class Server:
             store_bets(bets)
             logging.info(f"action: apuesta_recibida | result: success | cantidad: {cantidad}")
             send_frame(client_sock, encode_ack(True))
-            should_close = False
+            return
 
         except Exception as e:
-            if action == "apuesta_recibida":
-                logging.error(f"action: apuesta_recibida | result: fail | cantidad: {cantidad}")
-            else:
-                logging.error(f"action: {action} | result: fail | error: {e}")
+            logging.error(f"action: {action} | result: fail | error: {e}")
             try:
                 send_frame(client_sock, encode_ack(False))
             except Exception:
                 pass
         finally:
-            if should_close:
-                try:
+            try:
+                if not any(sock is client_sock for sock, _ in self._pending_qwin):
                     client_sock.close()
-                except Exception:
-                    pass
+            except Exception:
+                pass
