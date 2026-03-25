@@ -36,9 +36,8 @@ func ReadBetsFromCSV(path string, agency uint8) ([]Bet, error) {
             rec[i] = strings.TrimSpace(rec[i])
         }
 
-        if len(rec) > 0 {
-            c0 := strings.ToLower(rec[0])
-            if c0 == "name" || c0 == "nombre" {
+        if len(rec) == 5 {
+            if _, err := strconv.Atoi(rec[4]); err != nil {
                 continue
             }
         }
