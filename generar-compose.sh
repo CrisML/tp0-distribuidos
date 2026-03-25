@@ -26,7 +26,6 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       - ./server/config.ini:/config.ini
-      - ./server/bets.csv:/bets.csv
     networks:
       - testing_net
 
@@ -49,7 +48,7 @@ if [[ "$N" -gt 0 ]]; then
       - testing_net
     volumes:
       - ./client/config.yaml:/config.yaml
-      - ./.data/agency-${i}.csv:/data/agency-${i}.csv:ro
+      - ./.data/agency-${i}.csv:/agency-${i}.csv
     depends_on:
       - server
 
