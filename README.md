@@ -9,10 +9,10 @@ Se implementó el script `generar-compose.sh` en la raíz del proyecto para gene
 
 **Ejecución:**
 ```bash
-    ./generar-compose.sh <arhcivo_salida> N
+./generar-compose.sh <arhcivo_salida> N
 
-    # Ejemplo
-    ./generar-compose.sh docker-compose-dev.yaml 5
+# Ejemplo
+./generar-compose.sh docker-compose-dev.yaml 5
 ```
 
 Luego, se puede levantar el entorno con:
@@ -20,7 +20,7 @@ Luego, se puede levantar el entorno con:
 make docker-compose-up
 ```
 
-**Resultado de tests (cátedra):**
+**Resultado de tests provista por la cátedra:**
 ![Resultado de tests - Ejercicio 1](images/screenshot_test_ej1.jpg)
 
 ### Ejercicio N°2:
